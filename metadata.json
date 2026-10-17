@@ -1,0 +1,6 @@
+{
+  "name": "Visual Analyzer",
+  "description": "Interactive multi-dimensional data visualization dashboard with universal CSV ingestion, real-time filtering, and customizable analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

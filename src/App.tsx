@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Dataset, ChartConfig, FilterState } from './types/data';
-import { loadDefaultDataset } from './data/sampleDatasets';
 import { initializeFilterState, applyFilters } from './utils/filterEngine';
 import { Header } from './components/Header';
+import { WelcomeView } from './components/WelcomeView';
 import { FilterBar } from './components/FilterBar';
 import { MetricSummaryStrip } from './components/MetricSummaryStrip';
 import { ChartContainer } from './components/charts/ChartContainer';
@@ -16,31 +16,32 @@ import { ChartCustomizer } from './components/ChartCustomizer';
 import { CsvUploadModal } from './components/CsvUploadModal';
 import { AddChartModal } from './components/AddChartModal';
 import { DataTable } from './components/DataTable';
+import { AnalyzerChat } from './components/AnalyzerChat';
 import { Plus, Upload, Sparkles, LayoutGrid } from 'lucide-react';
 
 export default function App() {
-  // Initialize with curated default dataset (SaaS Sales & Performance)
-  const [initialData] = useState(() => loadDefaultDataset());
-  const [dataset, setDataset] = useState<Dataset>(initialData.dataset);
-  const [charts, setCharts] = useState<ChartConfig[]>(initialData.charts);
-  const [filterState, setFilterState] = useState<FilterState>(() =>
-    initializeFilterState(initialData.dataset)
-  );
+  // Fresh initial state: start without pre-populated hard-coded data
+  const [dataset, setDataset] = useState<Dataset | null>(null);
+  const [charts, setCharts] = useState<ChartConfig[]>([]);
+  const [filterState, setFilterState] = useState<FilterState | null>(null);
 
   const [currentView, setCurrentView] = useState<'dashboard' | 'table'>('dashboard');
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isAddChartModalOpen, setIsAddChartModalOpen] = useState(false);
   const [editingChart, setEditingChart] = useState<ChartConfig | null>(null);
+  const [isChatOpen, setIsChatOpen] = useState(true);
+  const [intelligenceLayout, setIntelligenceLayout] = useState<'sidebar' | 'inline'>('sidebar');
 
-  // When dataset changes, update filter state
+  // When a dataset is uploaded or selected
   const handleDatasetLoaded = (newDataset: Dataset, recommendedCharts?: ChartConfig[]) => {
     setDataset(newDataset);
     setFilterState(initializeFilterState(newDataset));
+    setCurrentView('dashboard');
 
     if (recommendedCharts && recommendedCharts.length > 0) {
       setCharts(recommendedCharts);
     } else {
-      // Auto-generate sensible default charts for custom CSV
+      // Auto-generate sensible default charts tailored specifically to this CSV's schema
       const numCols = newDataset.columns.filter((c) => c.type === 'number');
       const catCols = newDataset.columns.filter((c) => c.type === 'string' || c.type === 'boolean');
       const dateCols = newDataset.columns.filter((c) => c.type === 'date');
@@ -146,18 +147,29 @@ export default function App() {
     }
   };
 
+  const handleClearDataset = () => {
+    setDataset(null);
+    setCharts([]);
+    setFilterState(null);
+    setIsChatOpen(false);
+    setCurrentView('dashboard');
+  };
+
   // Real-time filtered rows
   const filteredRows = useMemo(() => {
+    if (!dataset || !filterState) return [];
     return applyFilters(dataset.rows, filterState);
-  }, [dataset.rows, filterState]);
+  }, [dataset, filterState]);
 
   // Numeric column names
   const numericColumns = useMemo(() => {
+    if (!dataset) return [];
     return dataset.columns.filter((c) => c.type === 'number').map((c) => c.name);
-  }, [dataset.columns]);
+  }, [dataset]);
 
   // Cross-filtering trigger from chart interactions
   const handleCrossFilterSelect = (colName: string, val: string) => {
+    if (!filterState) return;
     const current = filterState.categoricalSelections[colName] || [];
     const updated = current.includes(val) ? current.filter((v) => v !== val) : [...current, val];
 
@@ -171,6 +183,7 @@ export default function App() {
   };
 
   const handleCrossFilterRange = (colName: string, min: number, max: number) => {
+    if (!filterState) return;
     const base = filterState.numericRanges[colName];
     if (!base) return;
     setFilterState({
@@ -225,113 +238,192 @@ export default function App() {
         onViewChange={setCurrentView}
         onOpenUpload={() => setIsUploadModalOpen(true)}
         onAddChart={() => setIsAddChartModalOpen(true)}
-        datasetName={dataset.name}
+        onToggleChat={() => setIsChatOpen(!isChatOpen)}
+        isChatOpen={isChatOpen}
+        datasetName={dataset?.name}
+        onClearDataset={handleClearDataset}
+        hasDataset={!!dataset}
       />
 
       {/* Main Viewport Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Metric Summary Strip */}
-        <MetricSummaryStrip
-          totalRows={dataset.rowCount}
-          filteredRows={filteredRows}
-          columns={dataset.columns}
-        />
+      <main className="flex-1 max-w-[1720px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {!dataset || !filterState ? (
+          /* First-time welcome view explaining features & where to start */
+          <WelcomeView
+            onDatasetLoaded={handleDatasetLoaded}
+            onOpenUploadModal={() => setIsUploadModalOpen(true)}
+          />
+        ) : (
+          /* Active Dataset Dashboard or Table View */
+          <div className="space-y-6">
+            {/* Metric Summary Strip */}
+            <MetricSummaryStrip
+              totalRows={dataset.rowCount}
+              filteredRows={filteredRows}
+              columns={dataset.columns}
+            />
 
-        {/* Global Real-Time Filter Bar */}
-        <FilterBar
-          filterState={filterState}
-          columns={dataset.columns}
-          totalRows={dataset.rowCount}
-          filteredRowsCount={filteredRows.length}
-          onFilterChange={setFilterState}
-          onResetFilters={() => setFilterState(initializeFilterState(dataset))}
-        />
+            {/* Global Real-Time Filter Bar */}
+            <FilterBar
+              filterState={filterState}
+              columns={dataset.columns}
+              totalRows={dataset.rowCount}
+              filteredRowsCount={filteredRows.length}
+              onFilterChange={setFilterState}
+              onResetFilters={() => setFilterState(initializeFilterState(dataset))}
+            />
 
-        {/* Dashboard Grid View */}
-        {currentView === 'dashboard' ? (
-          <div>
-            {charts.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center flex flex-col items-center justify-center">
-                <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mb-3">
-                  <LayoutGrid className="w-6 h-6" />
-                </div>
-                <h3 className="text-sm font-semibold text-slate-900 mb-1">
-                  No charts on this dashboard yet
-                </h3>
-                <p className="text-xs text-slate-500 max-w-sm mb-4">
-                  Add custom visualizations to start exploring patterns and trends in your data.
-                </p>
-                <button
-                  onClick={() => setIsAddChartModalOpen(true)}
-                  className="px-4 py-2 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+            {/* Main Content Area: Dashboard with integrated Intelligence & Visualizations or Data Grid */}
+            {currentView === 'dashboard' ? (
+              <div className="space-y-6">
+                {/* Mode 1: Inline Full-Width Intelligence Section (when inline layout is selected) */}
+                {isChatOpen && intelligenceLayout === 'inline' && (
+                  <AnalyzerChat
+                    key={`inline_${dataset.id}`}
+                    dataset={dataset}
+                    filteredRows={filteredRows}
+                    filterState={filterState}
+                    charts={charts}
+                    onAddSuggestedChart={handleAddChart}
+                    isOpen={true}
+                    layoutMode="inline"
+                    onToggleLayoutMode={() => setIntelligenceLayout('sidebar')}
+                    onClose={() => setIsChatOpen(false)}
+                  />
+                )}
+
+                {/* Dashboard Grid Container: Either split with Sidebar Workbench or full-width */}
+                <div
+                  className={`flex flex-col ${
+                    isChatOpen && intelligenceLayout === 'sidebar'
+                      ? 'xl:flex-row items-start gap-6'
+                      : ''
+                  }`}
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>Add First Chart</span>
-                </button>
+                  {/* Visualizations Grid */}
+                  <div className="flex-1 min-w-0 w-full">
+                    {charts.length === 0 ? (
+                      <div className="bg-white rounded-xl border border-dashed border-slate-300 p-12 text-center flex flex-col items-center justify-center">
+                        <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mb-3">
+                          <LayoutGrid className="w-6 h-6" />
+                        </div>
+                        <h3 className="text-sm font-semibold text-slate-900 mb-1">
+                          No charts on this dashboard yet
+                        </h3>
+                        <p className="text-xs text-slate-500 max-w-sm mb-4">
+                          Add custom visualizations or use the Intelligence panel to generate charts tailored to your data.
+                        </p>
+                        <button
+                          onClick={() => setIsAddChartModalOpen(true)}
+                          className="px-4 py-2 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add First Chart</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-12 gap-5">
+                        {charts.map((config) => (
+                          <ChartContainer
+                            key={config.id}
+                            config={config}
+                            onEdit={() => setEditingChart(config)}
+                            onDelete={() => handleDeleteChart(config.id)}
+                            onDuplicate={() => handleDuplicateChart(config)}
+                          >
+                            <ChartRenderer
+                              config={config}
+                              rows={filteredRows}
+                              numericColumns={numericColumns}
+                              onFilterSelect={handleCrossFilterSelect}
+                              onFilterRange={handleCrossFilterRange}
+                              onUpdateAggregation={(agg) =>
+                                handleUpdateChartAggregation(config.id, agg)
+                              }
+                            />
+                          </ChartContainer>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Bottom Add Chart & Switcher Bar */}
+                    <div className="mt-8 pt-6 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 text-xs text-slate-500">
+                        <span className="font-medium text-slate-700">{charts.length} visualizations active</span>
+                        <span>·</span>
+                        <span>Click any chart bar or slice to cross-filter</span>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => setIsAddChartModalOpen(true)}
+                          className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add Visualization</span>
+                        </button>
+                        <button
+                          onClick={() => setIsUploadModalOpen(true)}
+                          className="px-3.5 py-2 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Upload className="w-4 h-4" />
+                          <span>Load Another CSV</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Mode 2: Integrated Sidebar Workbench on the right */}
+                  {isChatOpen && intelligenceLayout === 'sidebar' ? (
+                    <aside className="w-full xl:w-[420px] 2xl:w-[460px] shrink-0 xl:sticky xl:top-6 transition-all">
+                      <AnalyzerChat
+                        key={`sidebar_${dataset.id}`}
+                        dataset={dataset}
+                        filteredRows={filteredRows}
+                        filterState={filterState}
+                        charts={charts}
+                        onAddSuggestedChart={handleAddChart}
+                        isOpen={true}
+                        layoutMode="sidebar"
+                        onToggleLayoutMode={() => setIntelligenceLayout('inline')}
+                        onClose={() => setIsChatOpen(false)}
+                      />
+                    </aside>
+                  ) : (
+                    /* Collapsed Right-Side Strip to reopen */
+                    !isChatOpen && (
+                      <aside className="hidden xl:flex flex-col items-center xl:sticky xl:top-6 shrink-0">
+                        <button
+                          onClick={() => setIsChatOpen(true)}
+                          className="flex flex-col items-center gap-2.5 px-3 py-4 bg-white hover:bg-indigo-50/50 border border-slate-200/90 rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] text-slate-700 hover:text-indigo-600 transition-all cursor-pointer group"
+                          title="Open Dataset Intelligence & Query"
+                        >
+                          <div className="w-7 h-7 rounded-lg bg-indigo-50 group-hover:bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                            <Sparkles className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+                          </div>
+                          <span className="text-[11px] font-semibold [writing-mode:vertical-lr] tracking-wide text-slate-600 group-hover:text-indigo-600">
+                            Dataset Intelligence
+                          </span>
+                        </button>
+                      </aside>
+                    )
+                  )}
+                </div>
               </div>
             ) : (
-              <div className="grid grid-cols-12 gap-5">
-                {charts.map((config) => (
-                  <ChartContainer
-                    key={config.id}
-                    config={config}
-                    onEdit={() => setEditingChart(config)}
-                    onDelete={() => handleDeleteChart(config.id)}
-                    onDuplicate={() => handleDuplicateChart(config)}
-                  >
-                    <ChartRenderer
-                      config={config}
-                      rows={filteredRows}
-                      numericColumns={numericColumns}
-                      onFilterSelect={handleCrossFilterSelect}
-                      onFilterRange={handleCrossFilterRange}
-                      onUpdateAggregation={(agg) =>
-                        handleUpdateChartAggregation(config.id, agg)
-                      }
-                    />
-                  </ChartContainer>
-                ))}
-              </div>
+              /* Raw Data Table View */
+              <DataTable
+                columns={dataset.columns}
+                rows={filteredRows}
+                datasetName={dataset.name}
+              />
             )}
-
-            {/* Bottom Add Chart & Switcher Bar */}
-            <div className="mt-8 pt-6 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3 text-xs text-slate-500">
-                <span className="font-medium text-slate-700">{charts.length} visualizations active</span>
-                <span>·</span>
-                <span>Click any chart bar or slice to cross-filter</span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setIsAddChartModalOpen(true)}
-                  className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Visualization</span>
-                </button>
-                <button
-                  onClick={() => setIsUploadModalOpen(true)}
-                  className="px-3.5 py-2 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>Load New CSV</span>
-                </button>
-              </div>
-            </div>
           </div>
-        ) : (
-          /* Raw Data Table View */
-          <DataTable
-            columns={dataset.columns}
-            rows={filteredRows}
-            datasetName={dataset.name}
-          />
         )}
       </main>
 
       {/* Chart Customizer Modal */}
-      {editingChart && (
+      {editingChart && dataset && (
         <ChartCustomizer
           initialConfig={editingChart}
           columns={dataset.columns}
@@ -351,12 +443,14 @@ export default function App() {
       />
 
       {/* Add New Chart Modal */}
-      <AddChartModal
-        isOpen={isAddChartModalOpen}
-        onClose={() => setIsAddChartModalOpen(false)}
-        columns={dataset.columns}
-        onAdd={handleAddChart}
-      />
+      {dataset && (
+        <AddChartModal
+          isOpen={isAddChartModalOpen}
+          onClose={() => setIsAddChartModalOpen(false)}
+          columns={dataset.columns}
+          onAdd={handleAddChart}
+        />
+      )}
     </div>
   );
 }

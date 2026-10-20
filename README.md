@@ -125,3 +125,8 @@ This project is licensed under the **Apache License 2.0**.
 - **Permissive Use**: Free to use, modify, distribute, and sublicense for commercial or open-source projects.
 - **Patent Rights**: Includes an explicit grant of patent rights from contributors to users.
 - **Conditions**: You must retain original copyright notices, disclaimers, and a copy of the license in any distributions.
+
+<img width="845" height="673" alt="Screenshot 2026-10-20 at 7 15 56 PM" src="https://github.com/user-attachments/assets/0f5d6610-d660-4e8b-bf45-0c599d8198e2" />
+
+<img width="847" height="611" alt="Screenshot 2026-10-20 at 7 16 46 PM" src="https://github.com/user-attachments/assets/cff780f7-94b1-4f7c-b60e-29231cf2808b" />
+
